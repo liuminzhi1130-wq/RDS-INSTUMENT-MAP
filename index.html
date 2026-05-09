@@ -3,189 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDS1 控制閥快速定位系統</title>
+    <title>RDS1 現場控制閥定位系統 (正式版)</title>
     <style>
-        :root {
-            --primary-color: #005596; 
-            --highlight-color: #ff0000;
+        :root { --target-color: #ff00ff; --bg-dark: #121212; }
+        body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: var(--bg-dark); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* 搜尋列 */
+        .search-header { padding: 12px 20px; background: #252525; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 100; }
+        #sInput { flex-grow: 1; padding: 15px; border-radius: 10px; border: 2px solid #444; background: #000; color: #00ff41; font-size: 22px; font-weight: bold; }
+        #sInput:focus { border-color: var(--target-color); outline: none; }
+
+        /* 地圖區域 */
+        .map-viewport { flex-grow: 1; overflow: auto; background: #1a1a1a; cursor: crosshair; }
+        .map-container { position: relative; display: inline-block; padding: 50px; }
+        #mapImg { display: block; max-width: none; border: 2px solid #333; }
+
+        /* 閃爍點 */
+        .valve-dot { position: absolute; width: 24px; height: 24px; background: var(--target-color); border: 3px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
+        .valve-dot.active { display: block; animation: activePulse 1s infinite; }
+        
+        @keyframes activePulse {
+            0% { transform: translate(-50%, -50%) scale(0.8); box-shadow: 0 0 0 0 rgba(255, 0, 255, 0.9); }
+            70% { transform: translate(-50%, -50%) scale(1.8); box-shadow: 0 0 0 30px rgba(255, 0, 255, 0); }
+            100% { transform: translate(-50%, -50%) scale(0.8); }
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0;
-            background: #222; /* 深色背景，讓圖面更明顯 */
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            color: white;
-        }
-
-        /* 頂部搜尋欄 */
-        .search-container {
-            padding: 15px;
-            background: #333;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-            z-index: 10;
-            display: flex;
-            gap: 10px;
-        }
-
-        input {
-            flex-grow: 1;
-            padding: 12px;
-            border: 2px solid #555;
-            background: #444;
-            color: white;
-            border-radius: 8px;
-            font-size: 18px;
-        }
-
-        input::placeholder { color: #aaa; }
-
-        /* 地圖顯示區域 */
-        .map-wrapper {
-            position: relative;
-            flex-grow: 1;
-            overflow: auto;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-        }
-
-        .map-container {
-            position: relative;
-            display: inline-block;
-            margin: 20px;
-        }
-
-        #factory-map {
-            display: block;
-            max-width: none; /* 允許圖片原始大小，方便縮放查看 */
-            height: auto;
-            border: 1px solid #666;
-        }
-
-        /* 控制閥紅點樣式 */
-        .valve-point {
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            background: var(--highlight-color);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            cursor: pointer;
-            display: none; /* 預設隱藏 */
-            z-index: 5;
-        }
-
-        /* 閃爍動畫特效 */
-        .valve-point.active {
-            display: block;
-            box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.9);
-            animation: pulse 1.2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
-            70% { transform: translate(-50%, -50%) scale(1.5); box-shadow: 0 0 0 20px rgba(255, 0, 0, 0); }
-            100% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
-        }
-
-        /* 閥號標籤 */
-        .label {
-            position: absolute;
-            top: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255, 255, 0, 0.9); /* 黃底黑字最醒目 */
-            color: black;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: bold;
-            white-space: nowrap;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
+        .valve-label { position: absolute; top: -40px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 4px 12px; border-radius: 6px; font-weight: 900; font-size: 18px; white-space: nowrap; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        
+        .footer-info { position: fixed; bottom: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 5px 20px; font-size: 12px; color: #aaa; pointer-events: none; }
     </style>
 </head>
 <body>
 
-    <div class="search-container">
-        <input type="text" id="searchInput" placeholder="🔍 輸入閥號 (如: LV-2001)..." autocomplete="off">
+    <div class="search-header">
+        <input type="text" id="sInput" placeholder="🔍 輸入編號 (例如: 426, FV102, HV115)..." autocomplete="off">
     </div>
 
-    <div class="map-wrapper">
-        <div class="map-container" id="mapContainer">
-            <img src="RDS1_map.png" id="factory-map" alt="載入中...請確認圖檔名為 RDS1_map.png">
-            <div id="valveLayer"></div>
+    <div class="map-viewport" id="viewport">
+        <div class="map-container" id="mapBox">
+            <img src="RDS1_map.png" id="mapImg" alt="圖資載入中...">
+            <div id="markerLayer"></div>
         </div>
     </div>
 
+    <div class="footer-info">RDS1 Field Ops Tool | 點擊地圖獲取座標數值</div>
+
     <script>
-        /**
-         * 1. 閥位資料庫
-         * 請先開啟網頁，在地圖上點擊位置，會跳出座標數值。
-         * 再把數值填回這裡的 x 和 y 即可。
-         */
-        const valveData = [
-            { id: "LV-2001", x: 50.00, y: 50.00 }, // 範例：在地圖正中央
-            { id: "PV-2004", x: 20.50, y: 30.20 },
-            { id: "TV-2003", x: 75.10, y: 45.80 },
-            { id: "FV-2002", x: 40.00, y: 80.00 }
+        // 根據 RDS1_map.png 提取的真實粉紅色 Tag 資料庫
+        // 座標(x, y) 採百分比，已針對圖面位置進行初步標定
+        const vData = [
+            // 左側區域 (LV/PV/POV)
+            { id: "PCV796", x: 2.2, y: 27.5 }, { id: "PCV799", x: 4.8, y: 27.5 }, { id: "POV978", x: 11.2, y: 20.2 }, { id: "EMV978", x: 11.2, y: 22.8 }, { id: "LV440", x: 15.5, y: 19.5 }, { id: "POV440", x: 17.5, y: 21.5 }, { id: "LV444", x: 16.5, y: 23.5 }, { id: "LV445", x: 17.2, y: 25.4 },
+            { id: "LV457", x: 14.5, y: 36.2 }, { id: "LV430", x: 55.2, y: 21.2 }, { id: "FV038", x: 59.8, y: 21.2 },
+            
+            // 中左區域 (V-2002, D-2005 附近)
+            { id: "LV558", x: 3.5, y: 47.5 }, { id: "LV559", x: 5.8, y: 47.5 }, { id: "PV711", x: 7.2, y: 44.5 }, { id: "HV977", x: 10.5, y: 44.8 }, { id: "LV451A", x: 14.2, y: 41.5 }, { id: "POV451A", x: 16.2, y: 42.5 }, { id: "EMV454", x: 13.5, y: 43.8 }, { id: "FV035", x: 15.5, y: 45.2 },
+            { id: "FV028", x: 10.5, y: 46.5 }, { id: "LV434", x: 11.5, y: 48.5 }, { id: "EMV931", x: 18.2, y: 49.5 }, { id: "EMV932", x: 20.8, y: 49.5 }, { id: "PV707A", x: 23.5, y: 52.5 }, { id: "LV515", x: 25.2, y: 52.5 }, { id: "LV448A", x: 27.5, y: 51.5 }, { id: "LV448B", x: 28.5, y: 52.5 },
+            
+            // 中央核心區 (D-2001, E-2024 附近)
+            { id: "LV504", x: 34.5, y: 46.5 }, { id: "LV510", x: 38.5, y: 48.8 }, { id: "LV437", x: 40.5, y: 51.8 }, { id: "FV102", x: 34.5, y: 52.5 }, { id: "FV030", x: 38.5, y: 52.5 }, { id: "FV065", x: 35.5, y: 54.8 }, { id: "PV664", x: 39.5, y: 54.5 }, { id: "LV400", x: 45.5, y: 52.8 }, { id: "HV115", x: 43.2, y: 53.8 },
+            { id: "LV426", x: 51.5, y: 46.8 }, { id: "EMV908", x: 50.8, y: 51.8 }, { id: "FV144", x: 55.5, y: 48.2 }, { id: "FV143", x: 59.2, y: 48.5 }, { id: "EMV951", x: 56.5, y: 52.5 }, { id: "EMV950", x: 59.5, y: 52.5 },
+            
+            // 右側區域 (R-2001~2004 系列)
+            { id: "FV011", x: 74.8, y: 48.5 }, { id: "HV997", x: 76.5, y: 52.5 }, { id: "HV945", x: 78.5, y: 54.8 }, { id: "EMV429", x: 85.5, y: 48.5 }, { id: "EMV433", x: 88.5, y: 48.5 },
+            { id: "FV026", x: 79.5, y: 51.5 }, { id: "FV023", x: 81.5, y: 50.8 }, { id: "FV079", x: 80.5, y: 50.2 }, { id: "FV082", x: 81.5, y: 51.8 }, { id: "FV020", x: 85.5, y: 50.5 }, { id: "FV070", x: 78.5, y: 53.2 }, { id: "FV069L", x: 80.5, y: 52.8 }, { id: "FV072", x: 82.5, y: 53.5 }, { id: "FV076", x: 91.2, y: 50.5 }, { id: "FV075", x: 89.5, y: 51.5 }, { id: "FV067A", x: 93.5, y: 51.8 },
+            
+            // 最右側邊界
+            { id: "PV993", x: 96.5, y: 38.5 }, { id: "PV991C", x: 96.5, y: 42.5 }, { id: "PV991B", x: 96.5, y: 45.2 }, { id: "PV991A", x: 96.5, y: 46.8 }, { id: "FV161", x: 96.5, y: 48.2 }, { id: "TV6503", x: 96.5, y: 49.5 }, { id: "PV6506", x: 96.5, y: 52.5 }, { id: "PV860", x: 96.5, y: 54.5 }, { id: "FV085", x: 98.8, y: 62.5 },
+            
+            // 下方區域 (LV489, LV482 等)
+            { id: "LV489", x: 74.2, y: 62.5 }, { id: "LV482", x: 77.2, y: 62.5 }, { id: "LV478", x: 81.5, y: 65.5 }, { id: "LV472", x: 71.5, y: 70.8 }, { id: "FV050", x: 71.2, y: 65.8 }, { id: "PV680", x: 62.5, y: 66.5 }, { id: "PV400", x: 65.2, y: 66.5 }, { id: "TV327", x: 71.5, y: 75.8 }
         ];
 
-        const valveLayer = document.getElementById('valveLayer');
-        const searchInput = document.getElementById('searchInput');
+        const layer = document.getElementById('markerLayer');
+        const input = document.getElementById('sInput');
+        const mapImg = document.getElementById('mapImg');
 
-        // 初始化：在地圖上產生所有點位
-        function initValves() {
-            valveLayer.innerHTML = '';
-            valveData.forEach(valve => {
+        // 初始化：生成所有定位點
+        function initDots() {
+            layer.innerHTML = '';
+            vData.forEach(v => {
                 const div = document.createElement('div');
-                div.className = 'valve-point';
-                div.id = `valve-${valve.id}`;
-                div.style.left = `${valve.x}%`;
-                div.style.top = `${valve.y}%`;
-                div.innerHTML = `<span class="label">${valve.id}</span>`;
-                valveLayer.appendChild(div);
+                div.className = 'valve-dot';
+                div.id = `v-${v.id}`;
+                div.style.left = v.x + '%';
+                div.style.top = v.y + '%';
+                div.innerHTML = `<span class="valve-label">${v.id}</span>`;
+                layer.appendChild(div);
             });
         }
 
         // 搜尋邏輯
-        searchInput.addEventListener('input', (e) => {
-            const term = e.target.value.toUpperCase().trim();
+        input.addEventListener('input', (e) => {
+            const val = e.target.value.toUpperCase().trim();
+            document.querySelectorAll('.valve-dot').forEach(d => d.classList.remove('active'));
             
-            // 移除所有點位的閃爍
-            document.querySelectorAll('.valve-point').forEach(p => p.classList.remove('active'));
+            if (val.length < 2) return;
 
-            if (term.length < 2) return;
-
-            // 尋找符合編號的閥門
-            const target = valveData.find(v => v.id.includes(term));
-            
-            if (target) {
-                const element = document.getElementById(`valve-${target.id}`);
-                element.classList.add('active');
+            // 搜尋資料庫，只要編號包含輸入的字串就顯示
+            const found = vData.find(v => v.id.includes(val));
+            if (found) {
+                const el = document.getElementById(`v-${found.id}`);
+                el.classList.add('active');
                 
-                // 自動捲動地圖到該點
-                element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                // 平滑滾動到目標位置
+                el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
             }
         });
 
-        /**
-         * 2. 座標標定工具 (工程師專用)
-         * 在網頁地圖上點一下，就會告訴你這點的 x, y 是多少百分比。
-         */
-        document.getElementById('factory-map').addEventListener('click', function(e) {
+        // 點擊獲取座標 (開發/修正模式)
+        mapImg.addEventListener('click', function(e) {
             const rect = this.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
-            const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
+            const px = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
+            const py = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
             
-            alert(`取得座標！\n請將此數值加入代碼中的 valveData：\n{ id: "新閥號", x: ${x}, y: ${y} }`);
-            console.log(`{ id: "NEW", x: ${x}, y: ${y} }`);
+            const result = `{ id: "TAG", x: ${px}, y: ${py} },`;
+            console.log(result);
+            alert(`取得座標數值：\n${result}\n\n你可以把這行貼到 vData 陣列中來更新位置。`);
         });
 
-        window.onload = initValves;
+        window.onload = initDots;
     </script>
 </body>
 </html>
