@@ -3,126 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDS1 現場控制閥定位系統 (正式版)</title>
+    <title>RDS1 控制閥全方位搜尋系統</title>
     <style>
-        :root { --target-color: #ff00ff; --bg-dark: #121212; }
-        body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: var(--bg-dark); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        
-        /* 搜尋列 */
-        .search-header { padding: 12px 20px; background: #252525; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 100; }
-        #sInput { flex-grow: 1; padding: 15px; border-radius: 10px; border: 2px solid #444; background: #000; color: #00ff41; font-size: 22px; font-weight: bold; }
-        #sInput:focus { border-color: var(--target-color); outline: none; }
-
-        /* 地圖區域 */
-        .map-viewport { flex-grow: 1; overflow: auto; background: #1a1a1a; cursor: crosshair; }
-        .map-container { position: relative; display: inline-block; padding: 50px; }
-        #mapImg { display: block; max-width: none; border: 2px solid #333; }
-
-        /* 閃爍點 */
-        .valve-dot { position: absolute; width: 24px; height: 24px; background: var(--target-color); border: 3px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
-        .valve-dot.active { display: block; animation: activePulse 1s infinite; }
-        
-        @keyframes activePulse {
-            0% { transform: translate(-50%, -50%) scale(0.8); box-shadow: 0 0 0 0 rgba(255, 0, 255, 0.9); }
-            70% { transform: translate(-50%, -50%) scale(1.8); box-shadow: 0 0 0 30px rgba(255, 0, 255, 0); }
+        :root { --main: #ff00ff; --bg: #0f0f0f; }
+        body { font-family: sans-serif; margin: 0; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .bar { padding: 15px; background: #222; display: flex; gap: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 100; }
+        input { flex-grow: 1; padding: 12px; border-radius: 8px; border: 2px solid #444; background: #000; color: #0ff; font-size: 20px; font-weight: bold; }
+        .view { flex-grow: 1; overflow: auto; background: #1a1a1a; position: relative; }
+        .container { position: relative; display: inline-block; padding: 50px; }
+        #map { display: block; max-width: none; border: 1px solid #333; }
+        .dot { position: absolute; width: 18px; height: 18px; background: var(--main); border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; }
+        .dot.active { display: block; animation: pulse 1s infinite; }
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(0.8); box-shadow: 0 0 0 0 rgba(255, 0, 255, 1); }
+            70% { transform: translate(-50%, -50%) scale(1.8); box-shadow: 0 0 0 25px rgba(255, 0, 255, 0); }
             100% { transform: translate(-50%, -50%) scale(0.8); }
         }
-
-        .valve-label { position: absolute; top: -40px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 4px 12px; border-radius: 6px; font-weight: 900; font-size: 18px; white-space: nowrap; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
-        
-        .footer-info { position: fixed; bottom: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 5px 20px; font-size: 12px; color: #aaa; pointer-events: none; }
+        .tag { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 2px 8px; border-radius: 4px; font-weight: 900; font-size: 16px; white-space: nowrap; }
+        .reset-btn { padding: 0 15px; background: #444; border: none; color: white; border-radius: 8px; cursor: pointer; }
     </style>
 </head>
 <body>
-
-    <div class="search-header">
-        <input type="text" id="sInput" placeholder="🔍 輸入編號 (例如: 426, FV102, HV115)..." autocomplete="off">
+    <div class="bar">
+        <input type="text" id="sInput" placeholder="🔍 輸入編號 (如: 426, FV102, HV115)..." autocomplete="off">
+        <button class="reset-btn" onclick="location.reload()">重置</button>
     </div>
-
-    <div class="map-viewport" id="viewport">
-        <div class="map-container" id="mapBox">
-            <img src="RDS1_map.png" id="mapImg" alt="圖資載入中...">
-            <div id="markerLayer"></div>
+    <div class="view">
+        <div class="container">
+            <img src="RDS1_map.png" id="map">
+            <div id="layer"></div>
         </div>
     </div>
-
-    <div class="footer-info">RDS1 Field Ops Tool | 點擊地圖獲取座標數值</div>
-
     <script>
-        // 根據 RDS1_map.png 提取的真實粉紅色 Tag 資料庫
-        // 座標(x, y) 採百分比，已針對圖面位置進行初步標定
+        // 全部標籤清單 - 根據 RDS1_map.png 實際位置標定
         const vData = [
-            // 左側區域 (LV/PV/POV)
-            { id: "PCV796", x: 2.2, y: 27.5 }, { id: "PCV799", x: 4.8, y: 27.5 }, { id: "POV978", x: 11.2, y: 20.2 }, { id: "EMV978", x: 11.2, y: 22.8 }, { id: "LV440", x: 15.5, y: 19.5 }, { id: "POV440", x: 17.5, y: 21.5 }, { id: "LV444", x: 16.5, y: 23.5 }, { id: "LV445", x: 17.2, y: 25.4 },
-            { id: "LV457", x: 14.5, y: 36.2 }, { id: "LV430", x: 55.2, y: 21.2 }, { id: "FV038", x: 59.8, y: 21.2 },
-            
-            // 中左區域 (V-2002, D-2005 附近)
-            { id: "LV558", x: 3.5, y: 47.5 }, { id: "LV559", x: 5.8, y: 47.5 }, { id: "PV711", x: 7.2, y: 44.5 }, { id: "HV977", x: 10.5, y: 44.8 }, { id: "LV451A", x: 14.2, y: 41.5 }, { id: "POV451A", x: 16.2, y: 42.5 }, { id: "EMV454", x: 13.5, y: 43.8 }, { id: "FV035", x: 15.5, y: 45.2 },
-            { id: "FV028", x: 10.5, y: 46.5 }, { id: "LV434", x: 11.5, y: 48.5 }, { id: "EMV931", x: 18.2, y: 49.5 }, { id: "EMV932", x: 20.8, y: 49.5 }, { id: "PV707A", x: 23.5, y: 52.5 }, { id: "LV515", x: 25.2, y: 52.5 }, { id: "LV448A", x: 27.5, y: 51.5 }, { id: "LV448B", x: 28.5, y: 52.5 },
-            
-            // 中央核心區 (D-2001, E-2024 附近)
-            { id: "LV504", x: 34.5, y: 46.5 }, { id: "LV510", x: 38.5, y: 48.8 }, { id: "LV437", x: 40.5, y: 51.8 }, { id: "FV102", x: 34.5, y: 52.5 }, { id: "FV030", x: 38.5, y: 52.5 }, { id: "FV065", x: 35.5, y: 54.8 }, { id: "PV664", x: 39.5, y: 54.5 }, { id: "LV400", x: 45.5, y: 52.8 }, { id: "HV115", x: 43.2, y: 53.8 },
-            { id: "LV426", x: 51.5, y: 46.8 }, { id: "EMV908", x: 50.8, y: 51.8 }, { id: "FV144", x: 55.5, y: 48.2 }, { id: "FV143", x: 59.2, y: 48.5 }, { id: "EMV951", x: 56.5, y: 52.5 }, { id: "EMV950", x: 59.5, y: 52.5 },
-            
-            // 右側區域 (R-2001~2004 系列)
-            { id: "FV011", x: 74.8, y: 48.5 }, { id: "HV997", x: 76.5, y: 52.5 }, { id: "HV945", x: 78.5, y: 54.8 }, { id: "EMV429", x: 85.5, y: 48.5 }, { id: "EMV433", x: 88.5, y: 48.5 },
-            { id: "FV026", x: 79.5, y: 51.5 }, { id: "FV023", x: 81.5, y: 50.8 }, { id: "FV079", x: 80.5, y: 50.2 }, { id: "FV082", x: 81.5, y: 51.8 }, { id: "FV020", x: 85.5, y: 50.5 }, { id: "FV070", x: 78.5, y: 53.2 }, { id: "FV069L", x: 80.5, y: 52.8 }, { id: "FV072", x: 82.5, y: 53.5 }, { id: "FV076", x: 91.2, y: 50.5 }, { id: "FV075", x: 89.5, y: 51.5 }, { id: "FV067A", x: 93.5, y: 51.8 },
-            
-            // 最右側邊界
-            { id: "PV993", x: 96.5, y: 38.5 }, { id: "PV991C", x: 96.5, y: 42.5 }, { id: "PV991B", x: 96.5, y: 45.2 }, { id: "PV991A", x: 96.5, y: 46.8 }, { id: "FV161", x: 96.5, y: 48.2 }, { id: "TV6503", x: 96.5, y: 49.5 }, { id: "PV6506", x: 96.5, y: 52.5 }, { id: "PV860", x: 96.5, y: 54.5 }, { id: "FV085", x: 98.8, y: 62.5 },
-            
-            // 下方區域 (LV489, LV482 等)
-            { id: "LV489", x: 74.2, y: 62.5 }, { id: "LV482", x: 77.2, y: 62.5 }, { id: "LV478", x: 81.5, y: 65.5 }, { id: "LV472", x: 71.5, y: 70.8 }, { id: "FV050", x: 71.2, y: 65.8 }, { id: "PV680", x: 62.5, y: 66.5 }, { id: "PV400", x: 65.2, y: 66.5 }, { id: "TV327", x: 71.5, y: 75.8 }
+            // LV 系列
+            { id: "LV440", x: 15.5, y: 19.5 }, { id: "LV444", x: 16.5, y: 23.5 }, { id: "LV445", x: 17.5, y: 25.5 }, { id: "LV430", x: 55.2, y: 21.2 }, 
+            { id: "LV457", x: 14.5, y: 36.5 }, { id: "LV558", x: 3.5, y: 47.5 }, { id: "LV559", x: 5.8, y: 47.5 }, { id: "LV451A", x: 14.2, y: 41.5 },
+            { id: "LV434", x: 11.5, y: 48.5 }, { id: "LV515", x: 25.2, y: 52.5 }, { id: "LV448A", x: 27.5, y: 51.5 }, { id: "LV448B", x: 28.5, y: 52.5 },
+            { id: "LV504", x: 34.5, y: 46.5 }, { id: "LV510", x: 38.5, y: 48.8 }, { id: "LV437", x: 40.5, y: 51.8 }, { id: "LV400", x: 45.5, y: 52.8 },
+            { id: "LV426", x: 50.5, y: 46.8 }, { id: "LV489", x: 74.2, y: 62.5 }, { id: "LV482", x: 77.2, y: 62.5 }, { id: "LV478", x: 81.5, y: 65.5 },
+            { id: "LV472", x: 71.5, y: 70.8 }, { id: "LV477", x: 45.2, y: 86.5 }, { id: "LV492", x: 52.5, y: 27.5 },
+            // FV 系列
+            { id: "FV038", x: 59.8, y: 21.2 }, { id: "FV058A", x: 55.2, y: 27.5 }, { id: "FV058B", x: 55.2, y: 31.5 }, { id: "FV035", x: 15.5, y: 45.2 },
+            { id: "FV028", x: 10.5, y: 46.5 }, { id: "FV102", x: 34.5, y: 52.5 }, { id: "FV030", x: 38.5, y: 52.5 }, { id: "FV065", x: 35.5, y: 54.8 },
+            { id: "FV144", x: 55.5, y: 48.2 }, { id: "FV143", x: 59.2, y: 48.5 }, { id: "FV011", x: 74.8, y: 48.5 }, { id: "FV012", x: 80.5, y: 55.2 },
+            { id: "FV026", x: 79.5, y: 51.5 }, { id: "FV023", x: 81.5, y: 50.8 }, { id: "FV079", x: 80.5, y: 50.2 }, { id: "FV082", x: 81.5, y: 51.8 },
+            { id: "FV020", x: 85.5, y: 50.5 }, { id: "FV070", x: 78.5, y: 53.2 }, { id: "FV069L", x: 80.5, y: 52.8 }, { id: "FV072", x: 82.5, y: 53.5 },
+            { id: "FV076", x: 91.2, y: 50.5 }, { id: "FV075", x: 89.5, y: 51.5 }, { id: "FV067A", x: 93.5, y: 51.8 }, { id: "FV161", x: 96.5, y: 48.2 },
+            { id: "FV050", x: 71.2, y: 65.8 }, { id: "FV085", x: 98.8, y: 62.5 }, { id: "FV054", x: 50.5, y: 85.5 }, { id: "FV061", x: 66.5, y: 80.5 },
+            { id: "FV049", x: 66.5, y: 78.5 }, { id: "FV048", x: 68.2, y: 84.5 }, { id: "FV643", x: 68.2, y: 86.5 },
+            // HV / PV / TV / EMV / PCV
+            { id: "PCV796", x: 2.2, y: 27.2 }, { id: "PCV799", x: 4.8, y: 27.2 }, { id: "POV978", x: 11.2, y: 20.2 }, { id: "EMV978", x: 11.2, y: 22.8 },
+            { id: "HV115", x: 43.2, y: 53.8 }, { id: "HV977", x: 10.5, y: 44.8 }, { id: "HV997", x: 76.5, y: 52.5 }, { id: "HV945", x: 78.5, y: 54.8 },
+            { id: "PV664", x: 39.5, y: 54.5 }, { id: "PV707A", x: 23.5, y: 52.5 }, { id: "PV711", x: 7.2, y: 44.5 }, { id: "PV680", x: 62.5, y: 66.5 },
+            { id: "PV400", x: 65.2, y: 66.5 }, { id: "PV993", x: 96.5, y: 38.5 }, { id: "PV991A", x: 96.5, y: 46.8 }, { id: "PV6506", x: 96.5, y: 52.5 },
+            { id: "TV135", x: 75.2, y: 48.5 }, { id: "TV147", x: 92.5, y: 56.5 }, { id: "TV327", x: 71.5, y: 75.8 }, { id: "TV410", x: 81.5, y: 74.5 },
+            { id: "EMV951", x: 56.5, y: 52.5 }, { id: "EMV950", x: 59.5, y: 52.5 }, { id: "EMV429", x: 85.5, y: 48.5 }, { id: "EMV433", x: 88.5, y: 48.5 },
+            { id: "EMV931", x: 18.2, y: 49.5 }, { id: "EMV908", x: 50.8, y: 51.8 }, { id: "HIC967", x: 86.5, y: 74.5 }, { id: "PV296A", x: 62.5, y: 76.5 },
+            { id: "PV652A", x: 62.5, y: 84.5 }, { id: "PV663A", x: 62.5, y: 86.5 }, { id: "PV652B", x: 65.2, y: 86.5 }, { id: "XV814", x: 7.5, y: 55.2 }, { id: "XV815", x: 13.5, y: 52.5 }
         ];
 
-        const layer = document.getElementById('markerLayer');
+        const layer = document.getElementById('layer');
         const input = document.getElementById('sInput');
-        const mapImg = document.getElementById('mapImg');
 
-        // 初始化：生成所有定位點
-        function initDots() {
+        function init() {
             layer.innerHTML = '';
             vData.forEach(v => {
-                const div = document.createElement('div');
-                div.className = 'valve-dot';
-                div.id = `v-${v.id}`;
-                div.style.left = v.x + '%';
-                div.style.top = v.y + '%';
-                div.innerHTML = `<span class="valve-label">${v.id}</span>`;
-                layer.appendChild(div);
+                const d = document.createElement('div');
+                d.className = 'dot'; d.id = `v-${v.id}`;
+                d.style.left = v.x + '%'; d.style.top = v.y + '%';
+                d.innerHTML = `<span class="tag">${v.id}</span>`;
+                layer.appendChild(d);
             });
         }
 
-        // 搜尋邏輯
         input.addEventListener('input', (e) => {
             const val = e.target.value.toUpperCase().trim();
-            document.querySelectorAll('.valve-dot').forEach(d => d.classList.remove('active'));
-            
+            document.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
             if (val.length < 2) return;
-
-            // 搜尋資料庫，只要編號包含輸入的字串就顯示
-            const found = vData.find(v => v.id.includes(val));
-            if (found) {
-                const el = document.getElementById(`v-${found.id}`);
+            const target = vData.find(v => v.id.includes(val));
+            if (target) {
+                const el = document.getElementById(`v-${target.id}`);
                 el.classList.add('active');
-                
-                // 平滑滾動到目標位置
                 el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
             }
         });
 
-        // 點擊獲取座標 (開發/修正模式)
-        mapImg.addEventListener('click', function(e) {
+        // 點擊圖片獲得座標功能 (直接顯示程式碼格式)
+        document.getElementById('map').addEventListener('click', function(e) {
             const rect = this.getBoundingClientRect();
-            const px = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
-            const py = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
-            
-            const result = `{ id: "TAG", x: ${px}, y: ${py} },`;
-            console.log(result);
-            alert(`取得座標數值：\n${result}\n\n你可以把這行貼到 vData 陣列中來更新位置。`);
+            const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+            const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+            const code = `{ id: "TAG", x: ${x}, y: ${y} },`;
+            prompt("請複製此行坐標代碼：", code);
         });
 
-        window.onload = initDots;
+        window.onload = init;
     </script>
 </body>
 </html>
