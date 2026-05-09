@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDS1 控制閥快速定位系統</title>
+    <style>
+        :root {
+            --primary-color: #005596; 
+            --highlight-color: #ff0000;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            background: #222; /* 深色背景，讓圖面更明顯 */
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            color: white;
+        }
+
+        /* 頂部搜尋欄 */
+        .search-container {
+            padding: 15px;
+            background: #333;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 2px solid #555;
+            background: #444;
+            color: white;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+
+        input::placeholder { color: #aaa; }
+
+        /* 地圖顯示區域 */
+        .map-wrapper {
+            position: relative;
+            flex-grow: 1;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .map-container {
+            position: relative;
+            display: inline-block;
+            margin: 20px;
+        }
+
+        #factory-map {
+            display: block;
+            max-width: none; /* 允許圖片原始大小，方便縮放查看 */
+            height: auto;
+            border: 1px solid #666;
+        }
+
+        /* 控制閥紅點樣式 */
+        .valve-point {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: var(--highlight-color);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            display: none; /* 預設隱藏 */
+            z-index: 5;
+        }
+
+        /* 閃爍動畫特效 */
+        .valve-point.active {
+            display: block;
+            box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.9);
+            animation: pulse 1.2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { transform: translate(-50%, -50%) scale(1.5); box-shadow: 0 0 0 20px rgba(255, 0, 0, 0); }
+            100% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+
+        /* 閥號標籤 */
+        .label {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 0, 0.9); /* 黃底黑字最醒目 */
+            color: black;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="search-container">
+        <input type="text" id="searchInput" placeholder="🔍 輸入閥號 (如: LV-2001)..." autocomplete="off">
+    </div>
+
+    <div class="map-wrapper">
+        <div class="map-container" id="mapContainer">
+            <img src="RDS1_map.png" id="factory-map" alt="載入中...請確認圖檔名為 RDS1_map.png">
+            <div id="valveLayer"></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 1. 閥位資料庫
+         * 請先開啟網頁，在地圖上點擊位置，會跳出座標數值。
+         * 再把數值填回這裡的 x 和 y 即可。
+         */
+        const valveData = [
+            { id: "LV-2001", x: 50.00, y: 50.00 }, // 範例：在地圖正中央
+            { id: "PV-2004", x: 20.50, y: 30.20 },
+            { id: "TV-2003", x: 75.10, y: 45.80 },
+            { id: "FV-2002", x: 40.00, y: 80.00 }
+        ];
+
+        const valveLayer = document.getElementById('valveLayer');
+        const searchInput = document.getElementById('searchInput');
+
+        // 初始化：在地圖上產生所有點位
+        function initValves() {
+            valveLayer.innerHTML = '';
+            valveData.forEach(valve => {
+                const div = document.createElement('div');
+                div.className = 'valve-point';
+                div.id = `valve-${valve.id}`;
+                div.style.left = `${valve.x}%`;
+                div.style.top = `${valve.y}%`;
+                div.innerHTML = `<span class="label">${valve.id}</span>`;
+                valveLayer.appendChild(div);
+            });
+        }
+
+        // 搜尋邏輯
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toUpperCase().trim();
+            
+            // 移除所有點位的閃爍
+            document.querySelectorAll('.valve-point').forEach(p => p.classList.remove('active'));
+
+            if (term.length < 2) return;
+
+            // 尋找符合編號的閥門
+            const target = valveData.find(v => v.id.includes(term));
+            
+            if (target) {
+                const element = document.getElementById(`valve-${target.id}`);
+                element.classList.add('active');
+                
+                // 自動捲動地圖到該點
+                element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+            }
+        });
+
+        /**
+         * 2. 座標標定工具 (工程師專用)
+         * 在網頁地圖上點一下，就會告訴你這點的 x, y 是多少百分比。
+         */
+        document.getElementById('factory-map').addEventListener('click', function(e) {
+            const rect = this.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
+            const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
+            
+            alert(`取得座標！\n請將此數值加入代碼中的 valveData：\n{ id: "新閥號", x: ${x}, y: ${y} }`);
+            console.log(`{ id: "NEW", x: ${x}, y: ${y} }`);
+        });
+
+        window.onload = initValves;
+    </script>
+</body>
+</html>
