@@ -3,127 +3,120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDS1 座標精確標定工具 - 🔨 槌子模式</title>
+    <title>RDS1 座標標定 - 連續錄製模式</title>
     <style>
         :root { --magenta: #ff00ff; --bg: #0f0f0f; }
-        body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: var(--bg); color: white; display: flex; height: 100vh; overflow: hidden; }
         
-        .header { padding: 15px 20px; background: #222; display: flex; gap: 10px; z-index: 1000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        #sInput { flex-grow: 1; padding: 12px; border-radius: 8px; border: 2px solid #444; background: #000; color: #00ff41; font-size: 20px; font-weight: bold; }
+        /* 左側操作區 */
+        .main-content { flex-grow: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #444; }
+        .header { padding: 15px; background: #222; display: flex; gap: 10px; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+        #sInput { flex-grow: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #000; color: #0f4; font-size: 18px; }
 
-        /* 地圖視窗：預設槌子游標 */
-        .map-view { 
-            flex-grow: 1; 
-            overflow: auto; 
-            background: #1a1a1a; 
-            position: relative; 
-            /* 使用 SVG 產生槌子游標 */
-            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' style='font-size:24px;'><text y='20'>🔨</text></svg>") 16 16, crosshair;
-            user-select: none;
-        }
-
+        /* 地圖區域 */
+        .map-view { flex-grow: 1; overflow: auto; background: #1a1a1a; cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' style='font-size:24px;'><text y='20'>🔨</text></svg>") 16 16, crosshair; user-select: none; }
         .map-container { position: relative; display: inline-block; padding: 50px; }
         #mapImg { display: block; max-width: none; border: 2px solid #333; }
 
-        /* 定位點樣式 */
-        .dot { position: absolute; width: 16px; height: 16px; background: var(--magenta); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
-        .dot.active { display: block; animation: flash 0.6s infinite alternate; }
-        @keyframes flash {
-            from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-            to { opacity: 0.5; transform: translate(-50%, -50%) scale(2); box-shadow: 0 0 20px var(--magenta); }
-        }
-        .tag { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 16px; white-space: nowrap; }
+        /* 右側紀錄面板 */
+        .record-panel { width: 350px; background: #1a1a1a; display: flex; flex-direction: column; z-index: 1000; }
+        .panel-header { padding: 15px; background: #333; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .copy-btn { background: var(--magenta); border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        #logList { flex-grow: 1; padding: 10px; font-family: monospace; font-size: 13px; color: #0ff; overflow-y: auto; white-space: pre-wrap; background: #000; margin: 10px; border: 1px solid #444; }
 
-        .info-panel { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 10px 20px; border-radius: 30px; border: 1px solid var(--magenta); font-size: 14px; z-index: 1000; pointer-events: none; }
+        /* 定位點 */
+        .dot { position: absolute; width: 14px; height: 14px; background: var(--magenta); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
+        .dot.active { display: block; animation: flash 0.6s infinite alternate; }
+        @keyframes flash { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0.3; transform: translate(-50%, -50%) scale(2); } }
+        .tag { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 1px 6px; border-radius: 4px; font-weight: bold; font-size: 12px; }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <input type="text" id="sInput" placeholder="🔍 搜尋閥號 (輸入數字即定位)..." autocomplete="off">
-    </div>
-
-    <div class="map-view" id="mapView">
-        <div class="map-container">
-            <img src="RDS1_map.png" id="mapImg" draggable="false">
-            <div id="layer"></div>
+    <div class="main-content">
+        <div class="header">
+            <input type="text" id="sInput" placeholder="🔍 搜尋已標定閥號..." autocomplete="off">
+        </div>
+        <div class="map-view" id="mapView">
+            <div class="map-container">
+                <img src="RDS1_map.png" id="mapImg" draggable="false">
+                <div id="layer"></div>
+            </div>
         </div>
     </div>
 
-    <div class="info-panel">
-        🔨 模式啟動：按住滑鼠可拖移，輕點紅色圓圈標籤可產生座標代碼
+    <div class="record-panel">
+        <div class="panel-header">
+            <span>📍 座標紀錄清單</span>
+            <button class="copy-btn" id="copyBtn">全部複製</button>
+        </div>
+        <div id="logList">// 🔨 敲擊圖面開始紀錄...</div>
     </div>
 
     <script>
-        // 目前確認精準的座標 (請以此格式持續回傳給我)
-        const vData = [
+        // 初始已確認資料 (可將先前正確的填回此處)
+        let vData = [
             { id: "LV426", x: 50.8, y: 46.8 }, 
             { id: "EMV908", x: 50.8, y: 51.8 }
         ];
 
         const mapView = document.getElementById('mapView');
-        const layer = document.getElementById('layer');
-        const sInput = document.getElementById('sInput');
         const mapImg = document.getElementById('mapImg');
+        const layer = document.getElementById('layer');
+        const logList = document.getElementById('logList');
+        const copyBtn = document.getElementById('copyBtn');
 
-        let isDragging = false;
-        let startX, startY, scrollLeft, scrollTop;
-        let mouseDownTime;
+        let isDragging = false, startX, startY, scrollLeft, scrollTop, mouseDownTime;
 
-        // --- 拖曳與點擊邏輯分離 ---
-
+        // --- 拖曳與敲擊分離 ---
         mapView.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            mouseDownTime = new Date().getTime();
-            startX = e.pageX - mapView.offsetLeft;
-            startY = e.pageY - mapView.offsetTop;
-            scrollLeft = mapView.scrollLeft;
-            scrollTop = mapView.scrollTop;
+            isDragging = true; mouseDownTime = Date.now();
+            startX = e.pageX - mapView.offsetLeft; startY = e.pageY - mapView.offsetTop;
+            scrollLeft = mapView.scrollLeft; scrollTop = mapView.scrollTop;
         });
 
         mapView.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
-            e.preventDefault();
-            const x = e.pageX - mapView.offsetLeft;
-            const y = e.pageY - mapView.offsetTop;
-            const walkX = (x - startX);
-            const walkY = (y - startY);
-            mapView.scrollLeft = scrollLeft - walkX;
-            mapView.scrollTop = scrollTop - walkY;
+            const x = e.pageX - mapView.offsetLeft; const y = e.pageY - mapView.offsetTop;
+            mapView.scrollLeft = scrollLeft - (x - startX);
+            mapView.scrollTop = scrollTop - (y - startY);
         });
 
         mapView.addEventListener('mouseup', (e) => {
-            const mouseUpTime = new Date().getTime();
-            const timeDiff = mouseUpTime - mouseDownTime;
+            const timeDiff = Date.now() - mouseDownTime;
             isDragging = false;
-
-            // 核心修正：如果按住時間短於 200ms，視為「敲擊」動作
-            if (timeDiff < 200) {
-                handleHammerClick(e);
-            }
+            if (timeDiff < 200) handleHammerClick(e);
         });
 
-        mapView.addEventListener('mouseleave', () => { isDragging = false; });
-
-        // --- 槌子敲擊產生座標 ---
+        // --- 核心：連續錄製功能 ---
         function handleHammerClick(e) {
             const rect = mapImg.getBoundingClientRect();
-            // 計算圖片上的百分比座標
             const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
             const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
             
-            const tag = prompt("🔨 敲擊成功！請輸入此點位的控制閥編號：", "LV");
-            if (tag) {
-                const codeLine = `{ id: "${tag}", x: ${x}, y: ${y} },`;
-                // 自動複製到剪貼簿，方便你貼給我
-                navigator.clipboard.writeText(codeLine).then(() => {
-                    alert("座標已自動複製到剪貼簿！\n\n" + codeLine + "\n\n請收集後整段貼給 AI。");
-                });
-                console.log(codeLine);
-            }
+            const codeLine = `{ id: "TAG", x: ${x}, y: ${y} },`;
+            
+            // 更新畫面的紀錄清單
+            if (logList.innerText.includes("//")) logList.innerText = "";
+            logList.innerText += codeLine + "\n";
+            logList.scrollTop = logList.scrollHeight;
+
+            // 暫時在地圖上畫一個點方便確認剛點過哪裡
+            const tempDot = document.createElement('div');
+            tempDot.className = 'dot active';
+            tempDot.style.display = 'block';
+            tempDot.style.left = x + '%'; tempDot.style.top = y + '%';
+            document.getElementById('layer').appendChild(tempDot);
         }
 
-        // --- 初始化與搜尋 ---
+        // 複製功能
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(logList.innerText).then(() => {
+                alert("清單已複製！請直接貼回給 AI 更新資料庫。");
+            });
+        });
+
+        // 初始化與搜尋 (維持原本功能)
         function init() {
             layer.innerHTML = '';
             vData.forEach(v => {
@@ -134,15 +127,14 @@
                 layer.appendChild(d);
             });
         }
-
-        sInput.addEventListener('input', (e) => {
+        document.getElementById('sInput').addEventListener('input', (e) => {
             const val = e.target.value.toUpperCase().trim();
             document.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
             if (val.length < 1) return;
             const target = vData.find(v => v.id.includes(val));
             if (target) {
                 const el = document.getElementById(`v-${target.id}`);
-                el.classList.add('active');
+                el.style.display = 'block'; el.classList.add('active');
                 el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
             }
         });
