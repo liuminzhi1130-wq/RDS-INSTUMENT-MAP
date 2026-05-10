@@ -3,37 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDS1 控制閥定位系統 - 手機優化版</title>
+    <title>RDS1 控制閥定位系統 - 深度縮放優化版</title>
     <style>
         :root { --target: #ff00ff; --bg: #0a0a0a; }
         body { font-family: -apple-system, sans-serif; margin: 0; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        /* 搜尋與縮放頂欄 */
+        /* 頂部控制欄 */
         .header { padding: 10px 15px; background: #222; display: flex; flex-direction: column; gap: 10px; z-index: 1000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .search-row { display: flex; gap: 10px; align-items: center; }
-        #sInput { flex-grow: 1; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #000; color: #00ff41; font-size: 18px; font-weight: bold; }
+        #sInput { flex-grow: 1; padding: 12px; border-radius: 8px; border: 1px solid #444; background: #000; color: #00ff41; font-size: 18px; font-weight: bold; }
         
-        .zoom-row { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #aaa; }
+        .zoom-row { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #aaa; padding: 2px 0; }
         #zoomRange { flex-grow: 1; accent-color: var(--target); }
+        #zoomVal { color: var(--target); font-weight: bold; width: 45px; text-align: right; }
 
-        /* 地圖視窗 */
+        /* 地圖顯示區域 */
         .map-view { flex-grow: 1; overflow: auto; background: #1a1a1a; position: relative; cursor: grab; user-select: none; }
         .map-view:active { cursor: grabbing; }
         .map-view.ready-to-hammer {
             cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' style='font-size:24px;'><text y='20'>🔨</text></svg>") 16 16, crosshair !important;
         }
 
-        .map-container { position: relative; display: inline-block; padding: 50px; transition: width 0.1s; }
+        .map-container { position: relative; display: inline-block; padding: 60px; transition: width 0.05s ease-out; }
         #mapImg { display: block; width: 100%; border: 1px solid #333; }
 
         /* 定位點樣式 */
-        .dot { position: absolute; width: 14px; height: 14px; background: var(--target); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
+        .dot { position: absolute; width: 16px; height: 16px; background: var(--target); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
         .dot.active { display: block; animation: flash 0.6s infinite alternate; }
-        @keyframes flash { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0.3; transform: translate(-50%, -50%) scale(2.2); } }
+        @keyframes flash { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0.3; transform: translate(-50%, -50%) scale(2.5); box-shadow: 0 0 15px var(--target); } }
         
-        .v-label { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 1px 6px; border-radius: 4px; font-weight: bold; font-size: 12px; white-space: nowrap; }
+        .v-label { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 14px; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
 
-        .hint-bar { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #888; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; z-index: 1000; pointer-events: none; }
+        .hint-bar { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #777; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; z-index: 1000; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -42,26 +43,30 @@
             <input type="text" id="sInput" placeholder="🔍 搜尋閥號 (如: 426)..." autocomplete="off">
         </div>
         <div class="zoom-row">
-            <span>縮小</span>
-            <input type="range" id="zoomRange" min="10" max="100" value="50">
-            <span>原始大小</span>
-            <span id="zoomVal">50%</span>
+            <span>原始 (100%)</span>
+            <input type="range" id="zoomRange" min="100" max="200" value="120">
+            <span>放大 (200%)</span>
+            <span id="zoomVal">120%</span>
         </div>
     </div>
 
     <div class="map-view" id="mapView">
-        <div class="map-container" id="mapContainer" style="width: 50%;">
+        <div class="map-container" id="mapContainer" style="width: 120%;">
             <img src="RDS1_map.png" id="mapImg" draggable="false">
             <div id="layer"></div>
         </div>
     </div>
 
-    <div class="hint-bar" id="hint">手停1秒變 🔨 可標定座標</div>
+    <div class="hint-bar" id="hint">手停1秒變 🔨 可點擊產生座標</div>
 
     <script>
-        // --- 完整 136 筆座標資料 ---
+        // --- 完整座標資料庫 (包含右側邊界修正) ---
         const vData = [
-            { id: "LV426", x: 51.5, y: 46.8 }, { id: "EMV908", x: 50.8, y: 51.8 }, { id: "FV102", x: 34.2, y: 52.1 }, { id: "POV978", x: 11.4, y: 19.4 }, { id: "EMV978", x: 11.3, y: 21.7 }, { id: "EMV980", x: 9.5, y: 28.1 }, { id: "PCV796", x: 3.44, y: 25.9 }, { id: "PCV799", x: 4.2, y: 25.9 }, { id: "LV457", x: 12.9, y: 36 }, { id: "PV711", x: 5.8, y: 42.8 }, { id: "LV512A", x: 6.5, y: 44.44 }, { id: "LV558", x: 4.95, y: 47 }, { id: "LV559", x: 6.2, y: 47 }, { id: "PV639", x: 8.8, y: 45.8 }, { id: "EMV979", x: 9.94, y: 42.1 }, { id: "HV977", x: 10, y: 44.5 }, { id: "LV451A", x: 14.38, y: 41.45 }, { id: "POV451A", x: 14.2, y: 42.4 }, { id: "EMV454", x: 13.26, y: 43.72 }, { id: "XV815", x: 12.93, y: 50.64 }, { id: "TV178", x: 12.78, y: 52.86 }, { id: "PCV817", x: 4.23, y: 53.41 }, { id: "PCV818", x: 4.2, y: 54.35 }, { id: "XV814", x: 8.58, y: 52.73 }, { id: "FV068", x: 15, y: 54.14 }, { id: "FV035", x: 17.91, y: 43.46 }, { id: "EMV931", x: 17.1, y: 48.7 }, { id: "EMV932", x: 20.48, y: 48.7 }, { id: "FV029", x: 20.15, y: 52.64 }, { id: "PV636", x: 25.7, y: 20.3 }, { id: "LV440", x: 24.47, y: 28.34 }, { id: "POV440", x: 25.47, y: 29.58 }, { id: "LV444", x: 25.44, y: 31.93 }, { id: "LV445", x: 24.7, y: 33.77 }, { id: "EIV-D2006", x: 23.2, y: 34.4 }, { id: "FV028", x: 22.26, y: 41.54 }, { id: "LV434", x: 22.2, y: 43.16 }, { id: "PV707A", x: 23.3, y: 50.38 }, { id: "LV515", x: 24.56, y: 50.3 }, { id: "LV448A", x: 26.1, y: 49.83 }, { id: "LV448B", x: 26.1, y: 50.85 }, { id: "PV643", x: 26.4, y: 53.7 }, { id: "EMV934", x: 30.36, y: 49.5 }, { id: "EMV933", x: 31.75, y: 49.53 }, { id: "LV504", x: 36.34, y: 43.33 }, { id: "LV510", x: 37, y: 49.27 }, { id: "FV102", x: 35.37, y: 52.13 }, { id: "FV065", x: 35.34, y: 53.9 }, { id: "LV437", x: 38.33, y: 50.7 }, { id: "FV030", x: 38.43, y: 52.07 }, { id: "PV664", x: 40.2, y: 52.7 }, { id: "HV115", x: 41.54, y: 52.7 }, { id: "LV400", x: 42.87, y: 52.63 }, { id: "LV492", x: 45.52, y: 31.83 }, { id: "FV058A", x: 47.85, y: 26.7 }, { id: "FV058B", x: 47.85, y: 29.7 }, { id: "EMV908", x: 50.5, y: 50.58 }, { id: "FV144", x: 55.2, y: 45.28 }, { id: "EMV951", x: 55, y: 48.78 }, { id: "FV143", x: 57.24, y: 45.28 }, { id: "EMV950", x: 57.3, y: 48.87 }, { id: "FV011", x: 60.63, y: 52.1 }, { id: "TV135", x: 62, y: 47.46 }, { id: "FV012", x: 65.16, y: 47.25 }, { id: "HV997", x: 66.3, y: 51.77 }, { id: "HV945", x: 66, y: 54.12 }, { id: "EMV429", x: 67.23, y: 48.9 }, { id: "EMV433", x: 67.92, y: 45.83 }, { id: "FV026", x: 74, y: 50.06 }, { id: "PV661", x: 75, y: 53.81 }, { id: "FV069", x: 79.05, y: 51.43 }, { id: "FV070", x: 79.47, y: 53.09 }, { id: "FV071", x: 77.02, y: 54.63 }, { id: "PV693B", x: 77.72, y: 58.94 }, { id: "FV023", x: 80.59, y: 50.23 }, { id: "FV079", x: 79.92, y: 51.26 }, { id: "FV082", x: 79.95, y: 51.98 }, { id: "FV069L", x: 80.95, y: 52.92 }, { id: "FV072", x: 81.01, y: 54.08 }, { id: "FV072H", x: 79.53, y: 54.59 }, { id: "LV679", x: 79.53, y: 57.58 }, { id: "LV522", x: 80.16, y: 59.97 }, { id: "FV084", x: 81.16, y: 60.86 }, { id: "FV047A", x: 81.91, y: 62.57 }, { id: "FV047B", x: 83.06, y: 62.57 }, { id: "FV041", x: 81.64, y: 64.62 }, { id: "FV020", x: 85.36, y: 50.36 }, { id: "FXV089", x: 84.66, y: 62.06 }, { id: "FV042", x: 83.88, y: 64.53 }, { id: "PV714", x: 86.50, y: 61.97 }, { id: "FV075", x: 90.61, y: 50.32 }, { id: "PV697", x: 89.46, y: 52.54 }, { id: "FV149", x: 90.61, y: 59.33 }, { id: "PV674", x: 90.52, y: 61.84 }, { id: "FXV084", x: 89.58, y: 63.12 }, { id: "FV076", x: 91.33, y: 49.59 }, { id: "FV067A", x: 91.58, y: 51.64 }, { id: "TV147", x: 92.72, y: 56.42 }, { id: "TV150", x: 92.00, y: 59.33 }, { id: "PV712", x: 91.18, y: 63.17 }, { id: "PV693C", x: 93.84, y: 59.88 }, { id: "PV993", x: 96.56, y: 38.50 }, { id: "PV991C", x: 96.65, y: 42.55 }, { id: "PV991B", x: 96.35, y: 45.28 }, { id: "PV991A", x: 96.35, y: 46.27 }, { id: "FV161", x: 96.38, y: 47.25 }, { id: "TV6503", x: 96.32, y: 49.04 }, { id: "PV6506", x: 96.50, y: 52.45 }, { id: "PV860", x: 99.25, y: 52.28 }, { id: "FV085", x: 98.91, y: 62.87 }, { id: "LV650", x: 4.59, y: 61.76 }, { id: "PV694", x: 7.40, y: 60.73 }, { id: "PV672", x: 9.81, y: 62.78 }, { id: "PV693A", x: 10.39, y: 60.26 }, { id: "PV610", x: 13.32, y: 62.74 }, { id: "LV409", x: 12.23, y: 66.92 }, { id: "EMV917", x: 14.76, y: 62.74 }, { id: "PV640", x: 16.97, y: 59.45 }, { id: "EMV916", x: 17.54, y: 62.70 }, { id: "LV411", x: 17.75, y: 67.01 }, { id: "PV633B", x: 19.38, y: 59.41 }, { id: "PV633A", x: 19.32, y: 62.74 }, { id: "PV707B", x: 20.56, y: 62.70 }, { id: "LV416", x: 21.11, y: 66.88 }, { id: "EMV918", x: 24.18, y: 62.74 }, { id: "EMV919", x: 26.75, y: 62.83 }, { id: "LV418", x: 26.57, y: 66.92 }, { id: "PV663B", x: 28.44, y: 62.91 }, { id: "PV601B", x: 29.65, y: 59.88 }, { id: "PV601A", x: 29.68, y: 62.83 }, { id: "LV423", x: 30.62, y: 66.92 }, { id: "EMV921", x: 32.52, y: 62.65 }, { id: "EMV920", x: 35.96, y: 62.65 }, { id: "LV425", x: 35.63, y: 67.01 }, { id: "LV575", x: 37.53, y: 70.12 }, { id: "LV576", x: 37.59, y: 75.25 }, { id: "FV036", x: 39.95, y: 61.97 }, { id: "LV527", x: 41.18, y: 69.27 }, { id: "LV530", x: 41.21, y: 74.78 }, { id: "TV394B", x: 47.55, y: 64.92 }, { id: "TV394A", x: 47.61, y: 66.07 }, { id: "LV466", x: 49.31, y: 70.12 }, { id: "PV856", x: 47.10, y: 77.59 }, { id: "LV495", x: 46.38, y: 80.32 }, { id: "LV477", x: 45.98, y: 89.07 }, { id: "PV7008B", x: 48.31, y: 77.64 }, { id: "PV7008A", x: 49.37, y: 77.76 }, { id: "FV054", x: 49.43, y: 85.49 }, { id: "PV650", x: 49.52, y: 87.58 }, { id: "PV858", x: 51.93, y: 61.59 }, { id: "PV753B", x: 53.65, y: 63.98 }, { id: "PV753A", x: 54.59, y: 62.27 }, { id: "LV489", x: 60.69, y: 62.14 }, { id: "LV482", x: 61.75, y: 62.06 }, { id: "PV680", x: 62.77, y: 65.13 }, { id: "TV296A", x: 62.35, y: 75.67 }, { id: "LV478", x: 64.55, y: 64.62 }, { id: "PV400", x: 64.40, y: 65.98 }, { id: "LV496", x: 63.53, y: 71.02 }, { id: "TV296C", x: 64.01, y: 69.87 }, { id: "TV296B", x: 64.07, y: 71.06 }, { id: "FV053B", x: 66.03, y: 69.61 }, { id: "FV053A", x: 66.09, y: 70.98 }, { id: "FV061", x: 66.43, y: 79.64 }, { id: "PV652A", x: 63.04, y: 83.48 }, { id: "PV663A", x: 62.08, y: 86.13 }, { id: "PV652B", x: 65.43, y: 86.64 }, { id: "FV049", x: 66.43, y: 83.35 }, { id: "FV048", x: 67.06, y: 84.98 }, { id: "FV643", x: 67.09, y: 86.64 }, { id: "TV327", x: 69.96, y: 76.82 }, { id: "FV050", x: 71.73, y: 65.67 }, { id: "LV472", x: 71.15, y: 70.25 }, { id: "TV410", x: 82.88, y: 74.51 }, { id: "HIC967", x: 86.35, y: 73.40 }, { id: "HIC985", x: 87.35, y: 68.66 }
+            { id: "LV426", x: 51.5, y: 46.8 }, { id: "EMV908", x: 50.8, y: 51.8 }, { id: "FV102", x: 34.2, y: 52.1 }, { id: "POV978", x: 11.4, y: 19.4 }, { id: "EMV978", x: 11.3, y: 21.7 }, { id: "EMV980", x: 9.5, y: 28.1 }, { id: "PCV796", x: 3.44, y: 25.9 }, { id: "PCV799", x: 4.2, y: 25.9 }, { id: "LV457", x: 12.9, y: 36 }, { id: "PV711", x: 5.8, y: 42.8 }, { id: "LV512A", x: 6.5, y: 44.44 }, { id: "LV558", x: 4.95, y: 47 }, { id: "LV559", x: 6.2, y: 47 }, { id: "PV639", x: 8.8, y: 45.8 }, { id: "EMV979", x: 9.94, y: 42.1 }, { id: "HV977", x: 10, y: 44.5 }, { id: "LV451A", x: 14.38, y: 41.45 }, { id: "POV451A", x: 14.2, y: 42.4 }, { id: "EMV454", x: 13.26, y: 43.72 }, { id: "XV815", x: 12.93, y: 50.64 }, { id: "TV178", x: 12.78, y: 52.86 }, { id: "PCV817", x: 4.23, y: 53.41 }, { id: "PCV818", x: 4.2, y: 54.35 }, { id: "XV814", x: 8.58, y: 52.73 }, { id: "FV068", x: 15, y: 54.14 }, { id: "FV035", x: 17.91, y: 43.46 }, { id: "EMV931", x: 17.1, y: 48.7 }, { id: "EMV932", x: 20.48, y: 48.7 }, { id: "FV029", x: 20.15, y: 52.64 }, { id: "PV636", x: 25.7, y: 20.3 }, { id: "LV440", x: 24.47, y: 28.34 }, { id: "POV440", x: 25.47, y: 29.58 }, { id: "LV444", x: 25.44, y: 31.93 }, { id: "LV445", x: 24.7, y: 33.77 }, { id: "EIV-D2006", x: 23.2, y: 34.4 }, { id: "FV028", x: 22.26, y: 41.54 }, { id: "LV434", x: 22.2, y: 43.16 }, { id: "PV707A", x: 23.3, y: 50.38 }, { id: "LV515", x: 24.56, y: 50.3 }, { id: "LV448A", x: 26.1, y: 49.83 }, { id: "LV448B", x: 26.1, y: 50.85 }, { id: "PV643", x: 26.4, y: 53.7 }, { id: "EMV934", x: 30.36, y: 49.5 }, { id: "EMV933", x: 31.75, y: 49.53 }, { id: "LV504", x: 36.34, y: 43.33 }, { id: "LV510", x: 37, y: 49.27 }, { id: "FV102", x: 35.37, y: 52.13 }, { id: "FV065", x: 35.34, y: 53.9 }, { id: "LV437", x: 38.33, y: 50.7 }, { id: "FV030", x: 38.43, y: 52.07 }, { id: "PV664", x: 40.2, y: 52.7 }, { id: "HV115", x: 41.54, y: 52.7 }, { id: "LV400", x: 42.87, y: 52.63 }, { id: "LV492", x: 45.52, y: 31.83 }, { id: "FV058A", x: 47.85, y: 26.7 }, { id: "FV058B", x: 47.85, y: 29.7 }, { id: "EMV908", x: 50.5, y: 50.58 }, { id: "FV144", x: 55.2, y: 45.28 }, { id: "EMV951", x: 55, y: 48.78 }, { id: "FV143", x: 57.24, y: 45.28 }, { id: "EMV950", x: 57.3, y: 48.87 }, { id: "FV011", x: 60.63, y: 52.1 }, { id: "TV135", x: 62, y: 47.46 }, { id: "FV012", x: 65.16, y: 47.25 }, { id: "HV997", x: 66.3, y: 51.77 }, { id: "HV945", x: 66, y: 54.12 }, { id: "EMV429", x: 67.23, y: 48.9 }, { id: "EMV433", x: 67.92, y: 45.83 }, { id: "FV026", x: 74, y: 50.06 }, { id: "PV661", x: 75, y: 53.81 }, { id: "FV069", x: 79.05, y: 51.43 }, { id: "FV070", x: 79.47, y: 53.09 }, { id: "FV071", x: 77.02, y: 54.63 }, { id: "PV693B", x: 77.72, y: 58.94 }, { id: "FV023", x: 80.59, y: 50.23 }, { id: "FV079", x: 79.92, y: 51.26 }, { id: "FV082", x: 79.95, y: 51.98 }, { id: "FV069L", x: 80.95, y: 52.92 }, { id: "FV072", x: 81.01, y: 54.08 }, { id: "FV072H", x: 79.53, y: 54.59 }, { id: "LV679", x: 79.53, y: 57.58 }, { id: "LV522", x: 80.16, y: 59.97 }, { id: "FV084", x: 81.16, y: 60.86 }, { id: "FV047A", x: 81.91, y: 62.57 }, { id: "FV047B", x: 83.06, y: 62.57 }, { id: "FV041", x: 81.64, y: 64.62 }, { id: "FV020", x: 85.36, y: 50.36 }, { id: "FXV089", x: 84.66, y: 62.06 }, { id: "FV042", x: 83.88, y: 64.53 }, { id: "PV714", x: 86.50, y: 61.97 }, { id: "FV075", x: 90.61, y: 50.32 }, { id: "PV697", x: 89.46, y: 52.54 }, { id: "FV149", x: 90.61, y: 59.33 }, { id: "PV674", x: 90.52, y: 61.84 }, { id: "FXV084", x: 89.58, y: 63.12 }, { id: "FV076", x: 91.33, y: 49.59 }, { id: "FV067A", x: 91.58, y: 51.64 }, { id: "TV147", x: 92.72, y: 56.42 }, { id: "TV150", x: 92.00, y: 59.33 }, { id: "PV712", x: 91.18, y: 63.17 }, { id: "PV693C", x: 93.84, y: 59.88 }, 
+            // 右側邊界修正點
+            { id: "PV993", x: 96.56, y: 38.50 }, { id: "PV991C", x: 95.50, y: 42.58 }, { id: "PV991B", x: 95.30, y: 45.18 }, { id: "PV991A", x: 95.30, y: 46.12 }, { id: "FV161", x: 95.38, y: 47.25 }, { id: "TV6503", x: 95.35, y: 49.20 }, { id: "PV6506", x: 95.40, y: 52.32 }, { id: "PV860", x: 97.20, y: 52.36 }, { id: "FV085", x: 97.10, y: 62.87 },
+            // 其他點位
+            { id: "LV650", x: 4.59, y: 61.76 }, { id: "PV694", x: 7.40, y: 60.73 }, { id: "PV672", x: 9.81, y: 62.78 }, { id: "PV693A", x: 10.39, y: 60.26 }, { id: "PV610", x: 13.32, y: 62.74 }, { id: "LV409", x: 12.23, y: 66.92 }, { id: "EMV917", x: 14.76, y: 62.74 }, { id: "PV640", x: 16.97, y: 59.45 }, { id: "EMV916", x: 17.54, y: 62.70 }, { id: "LV411", x: 17.75, y: 67.01 }, { id: "PV633B", x: 19.38, y: 59.41 }, { id: "PV633A", x: 19.32, y: 62.74 }, { id: "PV707B", x: 20.56, y: 62.70 }, { id: "LV416", x: 21.11, y: 66.88 }, { id: "EMV918", x: 24.18, y: 62.74 }, { id: "EMV919", x: 26.75, y: 62.83 }, { id: "LV418", x: 26.57, y: 66.92 }, { id: "PV663B", x: 28.44, y: 62.91 }, { id: "PV601B", x: 29.65, y: 59.88 }, { id: "PV601A", x: 29.68, y: 62.83 }, { id: "LV423", x: 30.62, y: 66.92 }, { id: "EMV921", x: 32.52, y: 62.65 }, { id: "EMV920", x: 35.96, y: 62.65 }, { id: "LV425", x: 35.63, y: 67.01 }, { id: "LV575", x: 37.53, y: 70.12 }, { id: "LV576", x: 37.59, y: 75.25 }, { id: "FV036", x: 39.95, y: 61.97 }, { id: "LV527", x: 41.18, y: 69.27 }, { id: "LV530", x: 41.21, y: 74.78 }, { id: "TV394B", x: 47.55, y: 64.92 }, { id: "TV394A", x: 47.61, y: 66.07 }, { id: "LV466", x: 49.31, y: 70.12 }, { id: "PV856", x: 47.10, y: 77.59 }, { id: "LV495", x: 46.38, y: 80.32 }, { id: "LV477", x: 45.98, y: 89.07 }, { id: "PV7008B", x: 48.31, y: 77.64 }, { id: "PV7008A", x: 49.37, y: 77.76 }, { id: "FV054", x: 49.43, y: 85.49 }, { id: "PV650", x: 49.52, y: 87.58 }, { id: "PV858", x: 51.93, y: 61.59 }, { id: "PV753B", x: 53.65, y: 63.98 }, { id: "PV753A", x: 54.59, y: 62.27 }, { id: "LV489", x: 60.69, y: 62.14 }, { id: "LV482", x: 61.75, y: 62.06 }, { id: "PV680", x: 62.77, y: 65.13 }, { id: "TV296A", x: 62.35, y: 75.67 }, { id: "LV478", x: 64.55, y: 64.62 }, { id: "PV400", x: 64.40, y: 65.98 }, { id: "LV496", x: 63.53, y: 71.02 }, { id: "TV296C", x: 64.01, y: 69.87 }, { id: "TV296B", x: 64.07, y: 71.06 }, { id: "FV053B", x: 66.03, y: 69.61 }, { id: "FV053A", x: 66.09, y: 70.98 }, { id: "FV061", x: 66.43, y: 79.64 }, { id: "PV652A", x: 63.04, y: 83.48 }, { id: "PV663A", x: 62.08, y: 86.13 }, { id: "PV652B", x: 65.43, y: 86.64 }, { id: "FV049", x: 66.43, y: 83.35 }, { id: "FV048", x: 67.06, y: 84.98 }, { id: "FV643", x: 67.09, y: 86.64 }, { id: "TV327", x: 69.96, y: 76.82 }, { id: "FV050", x: 71.73, y: 65.67 }, { id: "LV472", x: 71.15, y: 70.25 }, { id: "TV410", x: 82.88, y: 74.51 }, { id: "HIC967", x: 86.35, y: 73.40 }, { id: "HIC985", x: 87.35, y: 68.66 }
         ];
 
         const mapView = document.getElementById('mapView');
@@ -74,7 +79,6 @@
 
         let isDragging = false, startX, startY, scrollLeft, scrollTop, hoverTimer, isReadyToHammer = false;
 
-        // --- 1. 初始化與縮放功能 ---
         function initDots() {
             layer.innerHTML = '';
             vData.forEach(v => {
@@ -93,7 +97,6 @@
             resetHammerStatus();
         });
 
-        // --- 2. 拖曳與靜止偵測 ---
         mapView.addEventListener('mousemove', (e) => {
             if (isDragging) {
                 mapView.scrollLeft = scrollLeft - (e.pageX - mapView.offsetLeft - startX);
@@ -135,7 +138,6 @@
             isDragging = false;
         });
 
-        // --- 3. 搜尋功能 ---
         sInput.addEventListener('input', (e) => {
             const val = e.target.value.toUpperCase().trim();
             document.querySelectorAll('.dot').forEach(d => { d.style.display = 'none'; d.classList.remove('active'); });
