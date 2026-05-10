@@ -3,28 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDS1 精確校準系統 - 拖曳優化版</title>
+    <title>RDS1 座標校準系統 - 拖曳與點擊優化版</title>
     <style>
         :root { --target: #ff00ff; --bg: #121212; }
         body { font-family: sans-serif; margin: 0; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        .header { padding: 15px; background: #252525; display: flex; gap: 10px; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.5); align-items: center; }
+        /* 搜尋欄 */
+        .header { padding: 15px; background: #252525; display: flex; gap: 10px; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
         #sInput { flex-grow: 1; padding: 12px; border-radius: 8px; border: 1px solid #444; background: #000; color: #0ff; font-size: 20px; font-weight: bold; }
         
-        /* 地圖視窗：設定滑鼠樣式為可抓取 */
+        /* 地圖視窗 */
         .map-view { 
             flex-grow: 1; 
             overflow: auto; 
             background: #1a1a1a; 
             position: relative; 
-            cursor: grab; /* 抓取前的手掌 */
-            user-select: none; /* 防止拖動時選取到文字 */
+            cursor: grab;
+            user-select: none;
         }
-        .map-view:active { cursor: grabbing; /* 抓取中的手掌 */ }
+        .map-view:active { cursor: grabbing; }
 
-        .map-container { position: relative; display: inline-block; padding: 100px; }
-        #mapImg { display: block; max-width: none; border: 2px solid #333; pointer-events: all; }
+        .map-container { position: relative; display: inline-block; padding: 50px; }
+        #mapImg { display: block; max-width: none; border: 1px solid #333; }
 
+        /* 定位點 */
         .dot { position: absolute; width: 14px; height: 14px; background: var(--target); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
         .dot.active { display: block; animation: pulse 0.8s infinite; }
         @keyframes pulse {
@@ -34,27 +36,27 @@
         }
         .v-label { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 16px; white-space: nowrap; }
         
-        .footer-hint { position: fixed; bottom: 10px; right: 20px; font-size: 13px; color: #aaa; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px; z-index: 1000; pointer-events: none; }
+        .footer-hint { position: fixed; bottom: 10px; right: 20px; font-size: 13px; color: #888; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px; pointer-events: none; }
     </style>
 </head>
 <body>
     <div class="header">
-        <input type="text" id="sInput" placeholder="🔍 搜尋閥號 (例如: 426)..." autocomplete="off">
+        <input type="text" id="sInput" placeholder="🔍 輸入編號搜尋 (例如: 426)..." autocomplete="off">
     </div>
 
     <div class="map-view" id="mapView">
-        <div class="map-container">
+        <div class="map-container" id="mapContainer">
             <img src="RDS1_map.png" id="mapImg" draggable="false">
             <div id="layer"></div>
         </div>
     </div>
 
-    <div class="footer-hint">操作指南：滑鼠按住可拖移地圖 | 點擊粉紅標籤取得座標</div>
+    <div class="footer-hint">拖曳：按住移動 | 標定：輕點編號</div>
 
     <script>
-        // 基準點資料 (之後請將收集到的校準點貼在這裡)
+        // 座標資料庫 (請在此處貼上你收集到的校準點)
         const vData = [
-            { id: "LV426", x: 51.5, y: 46.8 }, 
+            { id: "LV426", x: 50.5, y: 46.8 }, 
             { id: "EMV908", x: 50.8, y: 51.8 }
         ];
 
@@ -63,37 +65,64 @@
         const sInput = document.getElementById('sInput');
         const mapImg = document.getElementById('mapImg');
 
-        // --- 拖曳功能實作 ---
+        // 狀態管理
         let isDown = false;
-        let startX;
-        let startY;
-        let scrollLeft;
-        let scrollTop;
+        let startX, startY;
+        let scrollLeft, scrollTop;
+        let moveDistance = 0; // 用來判斷是點擊還是拖曳
+
+        // --- 事件監聽邏輯 ---
 
         mapView.addEventListener('mousedown', (e) => {
-            if (e.target.id === 'sInput') return; // 點搜尋框不觸發拖動
             isDown = true;
+            moveDistance = 0; // 重置位移
             startX = e.pageX - mapView.offsetLeft;
             startY = e.pageY - mapView.offsetTop;
             scrollLeft = mapView.scrollLeft;
             scrollTop = mapView.scrollTop;
         });
 
-        mapView.addEventListener('mouseleave', () => { isDown = false; });
-        mapView.addEventListener('mouseup', () => { isDown = false; });
-
         mapView.addEventListener('mousemove', (e) => {
             if (!isDown) return;
             e.preventDefault();
             const x = e.pageX - mapView.offsetLeft;
             const y = e.pageY - mapView.offsetTop;
-            const walkX = (x - startX) * 1.5; // 移動倍率
-            const walkY = (y - startY) * 1.5;
+            const walkX = (x - startX);
+            const walkY = (y - startY);
+            
+            // 累計位移量
+            moveDistance += Math.abs(walkX) + Math.abs(walkY);
+            
             mapView.scrollLeft = scrollLeft - walkX;
             mapView.scrollTop = scrollTop - walkY;
         });
 
+        mapView.addEventListener('mouseup', (e) => {
+            isDown = false;
+        });
+
+        mapView.addEventListener('mouseleave', () => {
+            isDown = false;
+        });
+
+        // 核心修正：只有在位移非常小的情況下才視為點擊
+        mapImg.addEventListener('click', (e) => {
+            if (moveDistance > 10) return; // 位移超過 10 像素視為拖曳，不執行點擊功能
+
+            const rect = mapImg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
+            const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
+            
+            const tag = prompt("請輸入控制閥編號 (校準模式)：", "LV");
+            if (tag) {
+                const result = `{ id: "${tag}", x: ${x}, y: ${y} },`;
+                alert("校準成功！請複製此行貼給 AI：\n\n" + result);
+                console.log(result);
+            }
+        });
+
         // --- 初始化與搜尋 ---
+
         function init() {
             layer.innerHTML = '';
             vData.forEach(v => {
@@ -114,21 +143,6 @@
                 const el = document.getElementById(`v-${target.id}`);
                 el.classList.add('active');
                 el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-            }
-        });
-
-        // --- 座標校準功能 ---
-        mapImg.addEventListener('click', (e) => {
-            // 只有在不是拖曳的情況下才觸發點擊 (避免拖動完跳出視窗)
-            const rect = mapImg.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
-            const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
-            
-            const tag = prompt("請輸入此點位的控制閥編號：", "LV");
-            if (tag) {
-                const result = `{ id: "${tag}", x: ${x}, y: ${y} },`;
-                alert("校準成功！請複製此行：\n\n" + result);
-                console.log(result);
             }
         });
 
