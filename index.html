@@ -3,88 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDS1 現場控制閥精確定位系統 (終極修正版)</title>
+    <title>RDS1 精確校準系統 - 拖曳優化版</title>
     <style>
-        :root { --target-color: #ff00ff; --bg: #121212; }
-        body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        :root { --target: #ff00ff; --bg: #121212; }
+        body { font-family: sans-serif; margin: 0; background: var(--bg); color: white; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        .header { padding: 15px 25px; background: #252525; display: flex; gap: 15px; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 100; }
-        #sInput { flex-grow: 1; padding: 12px 20px; border-radius: 10px; border: 2px solid #444; background: #000; color: #00ff41; font-size: 22px; font-weight: bold; font-family: monospace; }
-        #sInput:focus { border-color: var(--target-color); outline: none; }
-
-        .viewport { flex-grow: 1; overflow: auto; background: #1a1a1a; cursor: crosshair; }
-        .container { position: relative; display: inline-block; padding: 50px; }
-        #mapImg { display: block; max-width: none; border: 2px solid #333; transition: filter 0.3s; }
-
-        /* 標點樣式：縮小尺寸，確保中心點精準落在標籤文字上 */
-        .dot { position: absolute; width: 12px; height: 12px; background: var(--target-color); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
-        .dot.active { display: block; animation: activePulse 1s infinite; }
+        .header { padding: 15px; background: #252525; display: flex; gap: 10px; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.5); align-items: center; }
+        #sInput { flex-grow: 1; padding: 12px; border-radius: 8px; border: 1px solid #444; background: #000; color: #0ff; font-size: 20px; font-weight: bold; }
         
-        @keyframes activePulse {
-            0% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(255, 0, 255, 1); }
-            70% { transform: translate(-50%, -50%) scale(2.2); box-shadow: 0 0 0 25px rgba(255, 0, 255, 0); }
-            100% { transform: translate(-50%, -50%) scale(0.9); }
+        /* 地圖視窗：設定滑鼠樣式為可抓取 */
+        .map-view { 
+            flex-grow: 1; 
+            overflow: auto; 
+            background: #1a1a1a; 
+            position: relative; 
+            cursor: grab; /* 抓取前的手掌 */
+            user-select: none; /* 防止拖動時選取到文字 */
         }
+        .map-view:active { cursor: grabbing; /* 抓取中的手掌 */ }
 
-        .label { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 3px 10px; border-radius: 4px; font-weight: bold; font-size: 16px; white-space: nowrap; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
-        .footer { position: fixed; bottom: 0; width: 100%; background: rgba(0,0,0,0.8); padding: 8px 20px; font-size: 13px; color: #aaa; z-index: 100; border-top: 1px solid #333; pointer-events: none; }
+        .map-container { position: relative; display: inline-block; padding: 100px; }
+        #mapImg { display: block; max-width: none; border: 2px solid #333; pointer-events: all; }
+
+        .dot { position: absolute; width: 14px; height: 14px; background: var(--target); border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 50; pointer-events: none; }
+        .dot.active { display: block; animation: pulse 0.8s infinite; }
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(0.8); box-shadow: 0 0 0 0 rgba(255, 0, 255, 0.7); }
+            70% { transform: translate(-50%, -50%) scale(1.6); box-shadow: 0 0 0 20px rgba(255, 0, 255, 0); }
+            100% { transform: translate(-50%, -50%) scale(0.8); }
+        }
+        .v-label { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 16px; white-space: nowrap; }
+        
+        .footer-hint { position: fixed; bottom: 10px; right: 20px; font-size: 13px; color: #aaa; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px; z-index: 1000; pointer-events: none; }
     </style>
 </head>
 <body>
-
     <div class="header">
-        <input type="text" id="sInput" placeholder="🔍 輸入標籤編號 (例如: 426, 102, 951)..." autocomplete="off">
+        <input type="text" id="sInput" placeholder="🔍 搜尋閥號 (例如: 426)..." autocomplete="off">
     </div>
 
-    <div class="viewport" id="view">
-        <div class="container">
-            <img src="RDS1_map.png" id="mapImg" alt="圖資載入中...">
+    <div class="map-view" id="mapView">
+        <div class="map-container">
+            <img src="RDS1_map.png" id="mapImg" draggable="false">
             <div id="layer"></div>
         </div>
     </div>
 
-    <div class="footer">RDS1 Field Operations | 已全面校準坐標系 | 點擊圖面即可獲取修正坐標</div>
+    <div class="footer-hint">操作指南：滑鼠按住可拖移地圖 | 點擊粉紅標籤取得座標</div>
 
     <script>
-        // --- 全圖標籤資料庫 (已根據 RDS1_map.png 原圖重新校準) ---
+        // 基準點資料 (之後請將收集到的校準點貼在這裡)
         const vData = [
-            // 左上區域
-            { id: "PCV796", x: 2.5, y: 27.5 }, { id: "PCV799", x: 4.8, y: 27.5 }, { id: "POV978", x: 11.2, y: 20.2 }, { id: "EMV978", x: 11.2, y: 22.8 }, { id: "LV440", x: 15.5, y: 19.5 }, { id: "POV440", x: 17.5, y: 21.5 }, { id: "LV444", x: 16.5, y: 23.5 }, { id: "LV445", x: 17.5, y: 25.5 },
-            // 中左區域
-            { id: "LV457", x: 14.5, y: 36.5 }, { id: "LV558", x: 3.5, y: 47.5 }, { id: "LV559", x: 5.8, y: 47.5 }, { id: "PV711", x: 7.2, y: 44.5 }, { id: "HV977", x: 10.5, y: 44.8 }, { id: "POV451A", x: 16.2, y: 42.5 }, { id: "LV451A", x: 14.2, y: 41.5 }, { id: "EMV454", x: 13.5, y: 43.8 }, { id: "FV035", x: 15.5, y: 45.2 }, { id: "FV028", x: 10.5, y: 46.5 }, { id: "LV434", x: 11.5, y: 48.5 },
-            // 中央核心區 (準確點基準)
-            { id: "LV430", x: 55.2, y: 21.2 }, { id: "FV038", x: 59.8, y: 21.2 }, { id: "LV492", x: 52.5, y: 27.5 }, { id: "FV058A", x: 55.2, y: 27.5 }, { id: "FV058B", x: 55.2, y: 31.5 },
-            { id: "EMV931", x: 18.2, y: 49.5 }, { id: "EMV932", x: 20.8, y: 49.5 }, { id: "PV707A", x: 23.5, y: 52.5 }, { id: "LV515", x: 25.2, y: 52.5 }, { id: "LV448A", x: 27.5, y: 51.5 }, { id: "LV448B", x: 28.5, y: 52.5 }, { id: "EMV934", x: 29.5, y: 53.5 }, { id: "EMV933", x: 32.5, y: 53.5 },
-            { id: "LV504", x: 34.5, y: 46.5 }, { id: "LV510", x: 38.5, y: 48.8 }, { id: "LV437", x: 40.5, y: 51.8 }, { id: "FV102", x: 34.5, y: 52.5 }, { id: "FV030", x: 38.5, y: 52.5 }, { id: "FV065", x: 35.5, y: 54.8 }, { id: "PV664", x: 39.5, y: 54.5 }, { id: "LV400", x: 45.5, y: 52.8 }, { id: "HV115", x: 43.2, y: 53.8 },
-            { id: "LV426", x: 51.5, y: 46.8 }, { id: "EMV908", x: 50.8, y: 51.8 }, { id: "FV144", x: 55.5, y: 48.2 }, { id: "FV143", x: 59.2, y: 48.5 }, { id: "EMV951", x: 56.5, y: 52.5 }, { id: "EMV950", x: 59.5, y: 52.5 },
-            // 右側區域
-            { id: "FV011", x: 74.8, y: 48.5 }, { id: "HV997", x: 76.5, y: 52.5 }, { id: "HV945", x: 78.5, y: 54.8 }, { id: "EMV429", x: 85.5, y: 48.5 }, { id: "EMV433", x: 88.5, y: 48.5 },
-            { id: "FV026", x: 79.5, y: 51.5 }, { id: "FV023", x: 81.5, y: 50.8 }, { id: "FV079", x: 80.5, y: 50.2 }, { id: "FV082", x: 81.5, y: 51.8 }, { id: "FV020", x: 85.5, y: 50.5 }, { id: "FV070", x: 78.5, y: 53.2 }, { id: "FV069L", x: 80.5, y: 52.8 }, { id: "FV072", x: 82.5, y: 53.5 }, { id: "FV076", x: 91.2, y: 50.5 }, { id: "FV075", x: 89.5, y: 51.5 }, { id: "FV067A", x: 93.5, y: 51.8 },
-            // 邊界區域
-            { id: "PV993", x: 96.5, y: 38.5 }, { id: "PV991C", x: 96.5, y: 42.5 }, { id: "PV991B", x: 96.5, y: 45.2 }, { id: "PV991A", x: 96.5, y: 46.8 }, { id: "FV161", x: 96.5, y: 48.2 }, { id: "TV6503", x: 96.5, y: 49.5 }, { id: "PV6506", x: 96.5, y: 52.5 }, { id: "PV860", x: 96.5, y: 54.5 }, { id: "FV085", x: 98.8, y: 62.5 },
-            // 底部區域
-            { id: "LV489", x: 74.2, y: 62.5 }, { id: "LV482", x: 77.2, y: 62.5 }, { id: "LV478", x: 81.5, y: 65.5 }, { id: "LV472", x: 71.5, y: 70.8 }, { id: "FV050", x: 71.2, y: 65.8 }, { id: "PV680", x: 62.5, y: 66.5 }, { id: "PV400", x: 65.2, y: 66.5 }, { id: "TV327", x: 71.5, y: 75.8 }, { id: "TV147", x: 92.5, y: 56.5 }, { id: "PV714", x: 89.5, y: 62.5 }, { id: "PV674", x: 90.5, y: 61.5 }, { id: "PV712", x: 91.5, y: 63.5 }, { id: "PV693C", x: 93.5, y: 61.2 }, { id: "TV410", x: 81.5, y: 74.5 }, { id: "HIC967", x: 86.5, y: 74.5 }, { id: "F2002HIC985", x: 85.2, y: 68.5 }, { id: "PV296A", x: 62.5, y: 76.5 }, { id: "FV061", x: 66.5, y: 80.5 }, { id: "FV049", x: 66.5, y: 78.5 }, { id: "FV048", x: 68.2, y: 84.5 }, { id: "FV643", x: 68.2, y: 86.5 }, { id: "PV652A", x: 62.5, y: 84.5 }, { id: "PV663A", x: 62.5, y: 86.5 }, { id: "PV652B", x: 65.2, y: 86.5 }, { id: "LV477", x: 45.2, y: 86.5 }, { id: "FV054", x: 50.5, y: 85.5 }, { id: "XV814", x: 7.5, y: 55.2 }, { id: "XV815", x: 13.5, y: 52.5 }
+            { id: "LV426", x: 51.5, y: 46.8 }, 
+            { id: "EMV908", x: 50.8, y: 51.8 }
         ];
 
+        const mapView = document.getElementById('mapView');
         const layer = document.getElementById('layer');
-        const input = document.getElementById('sInput');
+        const sInput = document.getElementById('sInput');
         const mapImg = document.getElementById('mapImg');
 
+        // --- 拖曳功能實作 ---
+        let isDown = false;
+        let startX;
+        let startY;
+        let scrollLeft;
+        let scrollTop;
+
+        mapView.addEventListener('mousedown', (e) => {
+            if (e.target.id === 'sInput') return; // 點搜尋框不觸發拖動
+            isDown = true;
+            startX = e.pageX - mapView.offsetLeft;
+            startY = e.pageY - mapView.offsetTop;
+            scrollLeft = mapView.scrollLeft;
+            scrollTop = mapView.scrollTop;
+        });
+
+        mapView.addEventListener('mouseleave', () => { isDown = false; });
+        mapView.addEventListener('mouseup', () => { isDown = false; });
+
+        mapView.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - mapView.offsetLeft;
+            const y = e.pageY - mapView.offsetTop;
+            const walkX = (x - startX) * 1.5; // 移動倍率
+            const walkY = (y - startY) * 1.5;
+            mapView.scrollLeft = scrollLeft - walkX;
+            mapView.scrollTop = scrollTop - walkY;
+        });
+
+        // --- 初始化與搜尋 ---
         function init() {
             layer.innerHTML = '';
             vData.forEach(v => {
                 const d = document.createElement('div');
                 d.className = 'dot'; d.id = `v-${v.id}`;
                 d.style.left = v.x + '%'; d.style.top = v.y + '%';
-                d.innerHTML = `<span class="label">${v.id}</span>`;
+                d.innerHTML = `<span class="v-label">${v.id}</span>`;
                 layer.appendChild(d);
             });
         }
 
-        input.addEventListener('input', (e) => {
+        sInput.addEventListener('input', (e) => {
             const val = e.target.value.toUpperCase().trim();
             document.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
-            if (val.length < 2) return;
+            if (val.length < 1) return;
             const target = vData.find(v => v.id.includes(val));
             if (target) {
                 const el = document.getElementById(`v-${target.id}`);
@@ -93,14 +117,19 @@
             }
         });
 
-        // 點擊獲取座標 (用於微調)
-        mapImg.addEventListener('click', function(e) {
-            const rect = this.getBoundingClientRect();
-            const px = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
-            const py = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
-            const code = `{ id: "TAG", x: ${px}, y: ${py} },`;
-            console.log(code);
-            alert(`修正座標已產生：\n${code}\n\n您可以將此行貼回 index.html 的 vData 中。`);
+        // --- 座標校準功能 ---
+        mapImg.addEventListener('click', (e) => {
+            // 只有在不是拖曳的情況下才觸發點擊 (避免拖動完跳出視窗)
+            const rect = mapImg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
+            const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
+            
+            const tag = prompt("請輸入此點位的控制閥編號：", "LV");
+            if (tag) {
+                const result = `{ id: "${tag}", x: ${x}, y: ${y} },`;
+                alert("校準成功！請複製此行：\n\n" + result);
+                console.log(result);
+            }
         });
 
         window.onload = init;
